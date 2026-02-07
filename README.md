@@ -71,29 +71,92 @@ Tested with Samsung appliances including:
 ### Prerequisites
 
 - A Samsung SmartThings developer account ([developer.smartthings.com](https://developer.smartthings.com))
-- OAuth2 credentials (Client ID and Client Secret) from a registered SmartApp
-- Your SmartThings device IDs
+- **SmartThings CLI** installed on your computer
+- **Node.js** (required for SmartThings CLI)
+- Home Assistant with external HTTPS access (e.g., Nabu Casa subscription)
 
-### Setup
+### Step 1: Install SmartThings CLI
 
-1. Go to **Settings** → **Devices & Services** → **Add Integration**
-2. Search for **SmartThings Dynamic**
-3. Enter your OAuth2 credentials when prompted
-4. Select the devices you want to integrate
+**Windows (via npm):**
+```bash
+npm install -g @smartthings/cli
+```
 
-### Device IDs
+**Windows (installer):**
+Download the MSI installer from [SmartThings CLI Releases](https://github.com/SmartThingsCommunity/smartthings-cli/releases).
 
-You can find your device IDs through the SmartThings API or CLI:
+**macOS:**
+```bash
+brew install smartthings
+# or
+npm install -g @smartthings/cli
+```
+
+**Linux:**
+```bash
+npm install -g @smartthings/cli
+```
+
+Verify the installation:
+```bash
+smartthings --version
+```
+
+### Step 2: Create an OAuth-In App
+
+Run the app creation wizard:
+```bash
+smartthings apps:create
+```
+
+When prompted:
+
+1. **App type:** Select **OAuth-In App**
+2. **Display Name:** `Home Assistant SmartThings Dynamic`
+3. **Description:** `Full SmartThings device control for Home Assistant`
+4. **Target URL:** Your Home Assistant external URL, e.g.:
+   ```
+   https://your-nabu-casa-id.ui.nabu.casa
+   ```
+   > ⚠️ Must be **HTTPS** — Samsung rejects HTTP URLs
+5. **Permissions/Scopes** — select at minimum:
+   - `r:devices:*` (read devices)
+   - `x:devices:*` (execute device commands)
+   - `r:locations:*` (read locations)
+   - `r:scenes:*` (read scenes)
+   - `x:scenes:*` (execute scenes)
+6. **Redirect URI:** Your HA OAuth callback URL
+
+After creation, the CLI will display:
+
+```
+App ID:        xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+Client ID:     xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+Client Secret: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+```
+
+> ⚠️ **Save these values immediately!** The Client Secret is shown only once.
+
+### Step 3: Get your device IDs
 
 ```bash
-# Using SmartThings CLI
 smartthings devices
 ```
 
-Or via the API:
+This lists all devices with their IDs. You'll need these during integration setup.
+
+You can also get detailed info about a specific device:
+```bash
+smartthings devices:status <device-id>
 ```
-GET https://api.smartthings.com/v1/devices
-```
+
+### Step 4: Add the integration to Home Assistant
+
+1. Go to **Settings** → **Devices & Services** → **Add Integration**
+2. Search for **SmartThings Dynamic**
+3. Enter your **Client ID** and **Client Secret** from Step 2
+4. Complete the OAuth2 authorization flow
+5. Select the devices you want to integrate
 
 ## Usage
 
@@ -162,7 +225,7 @@ This integration uses OAuth2 authentication, which is not affected by the PAT to
 
 ```bash
 # Clone the repository
-git clone https://github.com/Pirog87/ha-smartthings-dynamic.git
+git clone https://github.com/Pirog87/SmartThings_dynamic.git
 
 # The integration structure
 custom_components/smartthings_dynamic/
