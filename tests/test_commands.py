@@ -277,23 +277,40 @@ class TestNumberCommands:
         assert cmd["arguments"] == [0.0]
 
     @pytest.mark.asyncio
-    async def test_integer_schema_receives_float_from_ha(self):
-        """HA NumberEntity always passes float. If SmartThings schema says
-        'integer', the API might reject 22.0 and expect 22.
-
-        This test documents the current behavior — the integration sends
-        float as-is. If Samsung rejects it, async_set_native_value should
-        cast to int for integer-typed schemas.
-        """
+    async def test_integer_schema_casts_to_int(self):
+        """SmartThingsDynamicNumber with schema_type='integer' must cast
+        the float from HA to int before sending to the API."""
         api, mock_req = _make_api()
-        # HA always calls with float
+        # Simulate what async_set_native_value now does for integer schema
         value = 22.0
-        await api.async_execute_command("d1", "main", "custom.cap", "setLevel", [value])
+        arg = int(value)  # schema_type == "integer"
+        await api.async_execute_command("d1", "main", "custom.cap", "setLevel", [arg])
 
         cmd = _last_command(mock_req)
-        # Current: sends float even for integer schema
-        assert cmd["arguments"] == [22.0]
+        assert cmd["arguments"] == [22]
+        assert isinstance(cmd["arguments"][0], int)
+
+    @pytest.mark.asyncio
+    async def test_number_schema_keeps_float(self):
+        """SmartThingsDynamicNumber with schema_type='number' sends float as-is."""
+        api, mock_req = _make_api()
+        value = 22.5
+        await api.async_execute_command("d1", "main", "custom.cap", "setTemp", [value])
+
+        cmd = _last_command(mock_req)
+        assert cmd["arguments"] == [22.5]
         assert isinstance(cmd["arguments"][0], float)
+
+    @pytest.mark.asyncio
+    async def test_integer_schema_zero_stays_int(self):
+        """int(0.0) == 0 — must be sent as integer 0, not float 0.0."""
+        api, mock_req = _make_api()
+        arg = int(0.0)
+        await api.async_execute_command("d1", "main", "custom.cap", "setLevel", [arg])
+
+        cmd = _last_command(mock_req)
+        assert cmd["arguments"] == [0]
+        assert isinstance(cmd["arguments"][0], int)
 
 
 # ─── Button command patterns ──────────────────────────────────────────────
