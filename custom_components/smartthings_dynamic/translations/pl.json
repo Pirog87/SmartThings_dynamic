@@ -1,0 +1,40 @@
+{
+  "config": {
+    "abort": {
+      "cannot_connect": "Nie udało się połączyć z SmartThings.",
+      "missing_credentials": "Brak Application Credentials. Najpierw dodaj je w Ustawienia → Urządzenia i usługi → Application Credentials.",
+      "missing_configuration": "Brak konfiguracji.",
+      "timeout": "Przekroczono czas oczekiwania przy łączeniu z SmartThings."
+    },
+    "step": {
+      "pick_implementation": {
+        "title": "Wybierz poświadczenia",
+        "data": {
+          "implementation": "Poświadczenia"
+        }
+      },
+      "auth": {
+        "title": "Autoryzacja SmartThings",
+        "description": "Otwórz link i zaloguj się do SmartThings, aby przyznać dostęp Home Assistant."
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Opcje",
+        "data": {
+          "scan_interval": "Interwał odświeżania (sekundy)",
+          "max_concurrent_requests": "Maks. równoległych zapytań o status",
+          "expose_command_buttons": "Wystaw komendy bez argumentów jako przyciski",
+          "expose_raw_sensors": "Wystaw złożone/surowe atrybuty jako sensory (może generować bałagan)",
+          "include_control_attributes_as_sensors": "Twórz też sensory dla atrybutów sterowanych przez Switch/Select/Number",
+          "aggressive_mode": "Tryb agresywny (twórz dodatkowe kontrolki z atrybutów supported*)"
+        }
+      }
+    }
+  },
+  "application_credentials": {
+    "description": "Utwórz aplikację OAuth w SmartThings i wpisz tutaj client id/secret. Dokumentacja: {docs_url}. SmartThings CLI: {cli_url}."
+  }
+}
