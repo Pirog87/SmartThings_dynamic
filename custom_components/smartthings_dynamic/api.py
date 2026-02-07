@@ -86,6 +86,28 @@ class SmartThingsApi:
             json_data=payload,
         )
 
+    async def async_request_raw(
+        self,
+        method: str,
+        url: str,
+        *,
+        headers: dict[str, str] | None = None,
+    ) -> bytes:
+        """Perform an authenticated request and return raw bytes (for image downloads)."""
+        req_headers = {**(headers or {})}
+        try:
+            resp = await self._oauth.async_request(
+                method,
+                url,
+                headers=req_headers,
+            )
+            resp.raise_for_status()
+            return await resp.read()
+        except ClientResponseError as err:
+            if err.status in (401, 403):
+                raise ConfigEntryAuthFailed("SmartThings authentication failed") from err
+            raise
+
     async def async_get_capability_definition(self, capability_id: str, version: int) -> dict[str, Any]:
         key = (capability_id, int(version))
         if key in self._capability_cache:
