@@ -1,0 +1,34 @@
+send_command:
+  name: Send SmartThings command
+  description: Send a raw SmartThings capability command to a device.
+  fields:
+    device_id:
+      required: true
+      example: "f2e920d8-edd6-63f3-52d0-39fbe86d3c32"
+      selector:
+        text:
+    component:
+      required: false
+      default: "main"
+      selector:
+        text:
+    capability:
+      required: true
+      example: "switch"
+      selector:
+        text:
+    command:
+      required: true
+      example: "on"
+      selector:
+        text:
+    arguments:
+      required: false
+      default: []
+      selector:
+        object:
+    config_entry_id:
+      required: false
+      description: Optional config entry id if you have more than one SmartThings Dynamic instance.
+      selector:
+        text:

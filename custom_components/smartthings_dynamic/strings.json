@@ -1,0 +1,41 @@
+{
+  "title": "SmartThings Dynamic",
+  "config": {
+    "abort": {
+      "cannot_connect": "Failed to connect to SmartThings.",
+      "missing_credentials": "Missing Application Credentials. Create them first under Settings → Devices & services → Application Credentials.",
+      "missing_configuration": "Missing configuration.",
+      "timeout": "Timeout contacting SmartThings."
+    },
+    "step": {
+      "pick_implementation": {
+        "title": "Pick credentials",
+        "data": {
+          "implementation": "Credentials"
+        }
+      },
+      "auth": {
+        "title": "Authorize SmartThings",
+        "description": "Follow the link to authorize Home Assistant to access your SmartThings account."
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Options",
+        "data": {
+          "scan_interval": "Polling interval (seconds)",
+          "max_concurrent_requests": "Max concurrent status requests",
+          "expose_command_buttons": "Expose no-argument commands as buttons",
+          "expose_raw_sensors": "Expose complex/raw attributes as sensors (can be noisy)",
+          "include_control_attributes_as_sensors": "Also create sensors for attributes that are controlled by Switch/Select/Number",
+          "aggressive_mode": "Aggressive mode (create additional controls from supported* attributes)"
+        }
+      }
+    }
+  },
+  "application_credentials": {
+    "description": "Create a SmartThings OAuth app and enter the client id/secret here. Docs: {docs_url}. SmartThings CLI: {cli_url}."
+  }
+}
