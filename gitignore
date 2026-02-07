@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Home Assistant
+config/
+!custom_components/
+*.log
+
+# Secrets - NEVER commit these
+secrets.yaml
+.env
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
