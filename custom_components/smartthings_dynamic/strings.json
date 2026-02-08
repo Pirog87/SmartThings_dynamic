@@ -17,6 +17,13 @@
       "auth": {
         "title": "Authorize SmartThings",
         "description": "Follow the link to authorize Home Assistant to access your SmartThings account."
+      },
+      "select_devices": {
+        "title": "Select devices",
+        "description": "Choose which SmartThings devices to monitor. All devices are selected by default.",
+        "data": {
+          "device_ids": "Devices"
+        }
       }
     }
   },
@@ -25,6 +32,7 @@
       "init": {
         "title": "Options",
         "data": {
+          "device_ids": "Monitored devices",
           "scan_interval": "Polling interval (seconds)",
           "max_concurrent_requests": "Max concurrent status requests",
           "expose_command_buttons": "Expose no-argument commands as buttons",

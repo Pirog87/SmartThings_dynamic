@@ -16,6 +16,13 @@
       "auth": {
         "title": "Autoryzacja SmartThings",
         "description": "Otwórz link i zaloguj się do SmartThings, aby przyznać dostęp Home Assistant."
+      },
+      "select_devices": {
+        "title": "Wybierz urządzenia",
+        "description": "Wybierz urządzenia SmartThings do monitorowania. Domyślnie zaznaczone są wszystkie.",
+        "data": {
+          "device_ids": "Urządzenia"
+        }
       }
     }
   },
@@ -24,6 +31,7 @@
       "init": {
         "title": "Opcje",
         "data": {
+          "device_ids": "Monitorowane urządzenia",
           "scan_interval": "Interwał odświeżania (sekundy)",
           "max_concurrent_requests": "Maks. równoległych zapytań o status",
           "expose_command_buttons": "Wystaw komendy bez argumentów jako przyciski",
