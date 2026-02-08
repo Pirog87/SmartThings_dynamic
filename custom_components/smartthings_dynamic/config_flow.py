@@ -14,6 +14,7 @@ from homeassistant.helpers import config_validation as cv
 from .const import (
     CONF_AGGRESSIVE_MODE,
     CONF_DEVICE_IDS,
+    CONF_ENABLE_WEBHOOK,
     CONF_EXPOSE_COMMAND_BUTTONS,
     CONF_EXPOSE_RAW_SENSORS,
     CONF_INCLUDE_CONTROL_ATTRIBUTES_AS_SENSORS,
@@ -226,9 +227,23 @@ class SmartThingsDynamicOptionsFlow(config_entries.OptionsFlow):
                     CONF_AGGRESSIVE_MODE,
                     default=bool(opts.get(CONF_AGGRESSIVE_MODE, DEFAULT_AGGRESSIVE_MODE)),
                 ): bool,
+                vol.Optional(
+                    CONF_ENABLE_WEBHOOK,
+                    default=bool(opts.get(CONF_ENABLE_WEBHOOK, False)),
+                ): bool,
             }
         )
 
+        # Show webhook URL as description if enabled
+        description_placeholders: dict[str, str] = {}
+        if opts.get(CONF_ENABLE_WEBHOOK):
+            from .webhook import webhook_url as _wh_url
+
+            url = _wh_url(self.hass, self._config_entry.entry_id)
+            description_placeholders["webhook_url"] = url or "(no external URL configured)"
+
         return self.async_show_form(
-            step_id="init", data_schema=vol.Schema(schema_fields)
+            step_id="init",
+            data_schema=vol.Schema(schema_fields),
+            description_placeholders=description_placeholders or None,
         )

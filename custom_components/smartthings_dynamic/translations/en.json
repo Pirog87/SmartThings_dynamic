@@ -1,0 +1,49 @@
+{
+  "config": {
+    "abort": {
+      "cannot_connect": "Failed to connect to SmartThings.",
+      "missing_credentials": "Missing Application Credentials. Create them first under Settings → Devices & services → Application Credentials.",
+      "missing_configuration": "Missing configuration.",
+      "timeout": "Timeout contacting SmartThings."
+    },
+    "step": {
+      "pick_implementation": {
+        "title": "Pick credentials",
+        "data": {
+          "implementation": "Credentials"
+        }
+      },
+      "auth": {
+        "title": "Authorize SmartThings",
+        "description": "Follow the link to authorize Home Assistant to access your SmartThings account."
+      },
+      "select_devices": {
+        "title": "Select devices",
+        "description": "Choose which SmartThings devices to monitor. All devices are selected by default.",
+        "data": {
+          "device_ids": "Devices"
+        }
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Options",
+        "data": {
+          "device_ids": "Monitored devices",
+          "scan_interval": "Polling interval (seconds)",
+          "max_concurrent_requests": "Max concurrent status requests",
+          "expose_command_buttons": "Expose no-argument commands as buttons",
+          "expose_raw_sensors": "Expose complex/raw attributes as sensors (can be noisy)",
+          "include_control_attributes_as_sensors": "Also create sensors for attributes that are controlled by Switch/Select/Number",
+          "aggressive_mode": "Aggressive mode (create additional controls from supported* attributes)",
+          "enable_webhook": "Enable webhook for real-time updates (requires external URL in HA config)"
+        }
+      }
+    }
+  },
+  "application_credentials": {
+    "description": "Create a SmartThings OAuth app and enter the client id/secret here. Docs: {docs_url}. SmartThings CLI: {cli_url}."
+  }
+}

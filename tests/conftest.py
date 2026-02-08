@@ -39,6 +39,7 @@ _HA_MODULES: list[str] = [
     "homeassistant.components.camera",
     "homeassistant.components.vacuum",
     "homeassistant.components.application_credentials",
+    "homeassistant.components.webhook",
     "homeassistant.util",
     "homeassistant.util.dt",
 ]
@@ -171,6 +172,12 @@ def _install_ha_mocks() -> None:
     ac_mod.AuthImplementation = type("AuthImplementation", (), {})  # type: ignore[attr-defined]
     ac_mod.AuthorizationServer = MagicMock  # type: ignore[attr-defined]
     ac_mod.ClientCredential = MagicMock  # type: ignore[attr-defined]
+
+    # --- homeassistant.components.webhook ---
+    wh_mod = sys.modules["homeassistant.components.webhook"]
+    wh_mod.async_register = MagicMock()  # type: ignore[attr-defined]
+    wh_mod.async_unregister = MagicMock()  # type: ignore[attr-defined]
+    wh_mod.async_generate_url = MagicMock(return_value="https://example.com/api/webhook/abc123")  # type: ignore[attr-defined]
 
     # --- homeassistant (root) ---
     ha_root = sys.modules["homeassistant"]

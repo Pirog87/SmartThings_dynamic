@@ -30,6 +30,7 @@ After Samsung's December 2024 API changes that introduced stricter PAT token lim
   - Standard — core entities
   - `expose_command_buttons` — exposes all commands as button entities
   - `aggressive_mode` — creates additional controls from `supported*` attribute lists
+- **Webhook support** — optional real-time updates via SmartThings SmartApp webhooks, with automatic fallback to polling
 - **Custom service** `smartthings_dynamic.send_command` — send any command to any device, even if no entity exists for it
 - **Capability caching** — reduces API calls by caching SmartThings capability definitions
 - **Configurable polling** — default 30s, adjustable per your needs
@@ -216,6 +217,24 @@ template:
 | `expose_command_buttons` | false | Create button entities for all commands |
 | `expose_raw_sensors` | false | Expose complex attributes as raw sensors |
 | `aggressive_mode` | false | Create extra controls from supported* lists |
+| `enable_webhook` | false | Enable webhook for real-time updates (requires external URL) |
+
+## Webhook (real-time updates)
+
+By default the integration polls the SmartThings API every 30 seconds. If you enable the **webhook** option, SmartThings will push device events to your Home Assistant instance in real-time, significantly reducing latency for state changes.
+
+### Requirements
+
+- Home Assistant must be accessible via an **external HTTPS URL** (e.g., Nabu Casa, reverse proxy with SSL).
+- The external URL must be configured in **Settings → System → Network → Home Assistant URL**.
+
+### How it works
+
+1. Enable the webhook in the integration options (**Settings → Devices & Services → SmartThings Dynamic → Configure**).
+2. The integration registers a webhook endpoint and listens for SmartThings SmartApp lifecycle events (PING, CONFIRMATION, EVENT).
+3. When a device event arrives, the coordinator data is patched in-place and entities refresh instantly.
+4. Polling is reduced to a 5-minute backup interval for consistency checks.
+5. If no external URL is available, the integration logs a warning and falls back to normal polling.
 
 ## Troubleshooting
 
@@ -256,11 +275,13 @@ custom_components/smartthings_dynamic/
 ├── button.py                # Button platform
 ├── vacuum.py                # Vacuum platform (Samsung JetBot)
 ├── camera.py                # Camera platform
+├── webhook.py               # Webhook handler for real-time events
 ├── application_credentials.py
 ├── manifest.json
 ├── services.yaml
 ├── strings.json
 └── translations/
+    ├── en.json              # English translation
     └── pl.json              # Polish translation
 ```
 
@@ -276,8 +297,8 @@ Contributions are welcome! Please:
 
 ## Roadmap
 
-- [ ] Webhook support for real-time updates (instead of polling)
-- [ ] HACS default repository listing
+- [x] Webhook support for real-time updates (instead of polling)
+- [x] HACS default repository listing (manifest, hacs.json, translations)
 - [x] Automatic device discovery (without manual device ID entry)
 - [ ] Lovelace dashboard cards for appliance controls
 - [x] Energy monitoring integration (state_class, device_class, unit normalisation for HA Energy Dashboard)

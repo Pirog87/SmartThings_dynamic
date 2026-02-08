@@ -4,36 +4,31 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Any
 
 import voluptuous as vol
-
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import config_entry_oauth2_flow
+from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.typing import ConfigType
-
 
 # Pre-load platform modules at import time.
 # Home Assistant imports the integration in the import executor by default, but may import platform
 # modules later during config entry setup. Pre-loading reduces (and in newer HA versions can avoid)
 # "Detected blocking call to import_module inside the event loop" warnings.
-from . import (  # noqa: F401
-    binary_sensor as _binary_sensor,
-    button as _button,
-    camera as _camera,
-    number as _number,
-    select as _select,
-    sensor as _sensor,
-    switch as _switch,
-    vacuum as _vacuum,
-)
-from homeassistant.helpers import config_validation as cv
-
+from . import binary_sensor as _binary_sensor  # noqa: F401
+from . import button as _button  # noqa: F401
+from . import camera as _camera  # noqa: F401
+from . import number as _number  # noqa: F401
+from . import select as _select  # noqa: F401
+from . import sensor as _sensor  # noqa: F401
+from . import switch as _switch  # noqa: F401
+from . import vacuum as _vacuum  # noqa: F401
 from .api import SmartThingsApi
-from .const import DOMAIN, PLATFORMS
+from .const import CONF_ENABLE_WEBHOOK, DOMAIN, PLATFORMS, WEBHOOK_BACKUP_POLL_INTERVAL
 from .coordinator import SmartThingsDynamicCoordinator
+from .webhook import async_register_webhook, async_unregister_webhook, webhook_url
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -80,6 +75,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
+    # --- Webhook for real-time updates ---
+    use_webhook = bool(entry.options.get(CONF_ENABLE_WEBHOOK, False))
+    if use_webhook:
+        await async_register_webhook(hass, entry.entry_id)
+        wh_url = webhook_url(hass, entry.entry_id)
+        if wh_url:
+            _LOGGER.info("Webhook active at %s – reduce polling to %s", wh_url, WEBHOOK_BACKUP_POLL_INTERVAL)
+            coordinator.update_interval = WEBHOOK_BACKUP_POLL_INTERVAL
+        else:
+            _LOGGER.warning("Webhook enabled but no external URL configured in HA – falling back to polling")
+
     # Reload when options change
     entry.async_on_unload(entry.add_update_listener(_async_update_listener))
 
@@ -93,6 +99,10 @@ async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> Non
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
+    # Unregister webhook if active
+    if bool(entry.options.get(CONF_ENABLE_WEBHOOK, False)):
+        await async_unregister_webhook(hass, entry.entry_id)
+
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:
         hass.data[DOMAIN].pop(entry.entry_id, None)

@@ -37,7 +37,8 @@
           "expose_command_buttons": "Wystaw komendy bez argumentów jako przyciski",
           "expose_raw_sensors": "Wystaw złożone/surowe atrybuty jako sensory (może generować bałagan)",
           "include_control_attributes_as_sensors": "Twórz też sensory dla atrybutów sterowanych przez Switch/Select/Number",
-          "aggressive_mode": "Tryb agresywny (twórz dodatkowe kontrolki z atrybutów supported*)"
+          "aggressive_mode": "Tryb agresywny (twórz dodatkowe kontrolki z atrybutów supported*)",
+          "enable_webhook": "Włącz webhook dla aktualizacji w czasie rzeczywistym (wymaga zewnętrznego URL w konfiguracji HA)"
         }
       }
     }
