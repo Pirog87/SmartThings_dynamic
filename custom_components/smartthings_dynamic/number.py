@@ -117,6 +117,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
                                     min_v=min_v,
                                     max_v=max_v,
                                     step=step,
+                                    schema_type=str(typ),
                                     name_suffix=suffix,
                                 )
                             )
@@ -187,6 +188,7 @@ class SmartThingsDynamicNumber(SmartThingsDynamicBaseEntity, NumberEntity):
         min_v: float | None,
         max_v: float | None,
         step: float | None,
+        schema_type: str = "number",
         name_suffix: str | None = None,
     ) -> None:
         super().__init__(coordinator, entry_id=entry_id, device=device, ref=ref, name_suffix=name_suffix)
@@ -195,6 +197,7 @@ class SmartThingsDynamicNumber(SmartThingsDynamicBaseEntity, NumberEntity):
         self._min_v = min_v
         self._max_v = max_v
         self._step = step
+        self._schema_type = schema_type
 
     @property
     def native_value(self) -> float | None:
@@ -216,11 +219,15 @@ class SmartThingsDynamicNumber(SmartThingsDynamicBaseEntity, NumberEntity):
         return self._step
 
     async def async_set_native_value(self, value: float) -> None:
+        # SmartThings API rejects float (e.g. 22.0) when the capability
+        # schema declares the argument as "integer".  HA NumberEntity always
+        # passes float, so we cast here based on the schema type.
+        arg: int | float = int(value) if self._schema_type == "integer" else value
         await self._api.async_execute_command(
             self.ref.device_id,
             self.ref.component_id,
             self.ref.capability_id,
             self._command,
-            [value],
+            [arg],
         )
         await self.coordinator.async_request_refresh()
