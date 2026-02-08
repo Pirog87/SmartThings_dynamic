@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
 from datetime import datetime
+from typing import Any
 
-from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
+from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.util import dt as dt_util
@@ -14,9 +14,11 @@ from homeassistant.util import dt as dt_util
 from .const import (
     CONF_EXPOSE_RAW_SENSORS,
     DOMAIN,
+    ENERGY_SUB_ATTRIBUTES,
+    ENERGY_UNIT_MAP,
 )
 from .entity import EntityRef, SmartThingsDynamicBaseEntity
-from .helpers import bool_like, is_supported_meta_attribute, safe_state, attribute_suffix
+from .helpers import attribute_suffix, bool_like, is_supported_meta_attribute, safe_state
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -67,23 +69,24 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
                         value = payload.get("value")
                         if value is None:
                             continue
-                        
+
                         # --- COMPLEX ATTRIBUTE HANDLING (JSON) ---
                         if isinstance(value, dict):
                             interesting_subkeys = [
-                                "completionTime", "remainingTime", 
-                                "movenOvenState", "processState", "meatProbeTemperature"
+                                "completionTime", "remainingTime",
+                                "movenOvenState", "processState", "meatProbeTemperature",
+                                *ENERGY_SUB_ATTRIBUTES,
                             ]
-                            
+
                             for sub_key in interesting_subkeys:
                                 if sub_key in value and value[sub_key] is not None:
                                     sub_key_id = f"{attr_name}.{sub_key}"
                                     key = f"{device_id}|{component_id}|{capability_id}|{sub_key_id}"
-                                    
+
                                     if key in added:
                                         continue
                                     added.add(key)
-                                    
+
                                     new_entities.append(
                                         SmartThingsDynamicSensor(
                                             coordinator,
@@ -106,7 +109,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
                         # --- STANDARD SENSORS ---
                         if isinstance(value, str) and value.lower() in ('none', 'null', 'n/a'):
                             continue
-                            
+
                         if bool_like(value):
                             continue
 
@@ -160,7 +163,7 @@ class SmartThingsDynamicSensor(SmartThingsDynamicBaseEntity, SensorEntity):
     @property
     def native_value(self):
         val = self._attr_value()
-        
+
         if self._sub_attribute:
             if isinstance(val, dict):
                 val = val.get(self._sub_attribute)
@@ -169,7 +172,7 @@ class SmartThingsDynamicSensor(SmartThingsDynamicBaseEntity, SensorEntity):
 
         if isinstance(val, str) and val.lower() in ('none', 'null', 'n/a'):
             return None
-        
+
         # Check for ISO8601 Timestamps
         if isinstance(val, str) and "T" in val and val.endswith("Z"):
             try:
@@ -181,50 +184,158 @@ class SmartThingsDynamicSensor(SmartThingsDynamicBaseEntity, SensorEntity):
 
         return safe_state(val)
 
+    # -----------------------------------------------------------------
+    # Helpers for energy-aware classification
+    # -----------------------------------------------------------------
+
+    def _effective_attr(self) -> str:
+        """Lower-cased attribute (or sub-attribute) name used for classification."""
+        return (self._sub_attribute or self.ref.attribute or "").lower()
+
+    def _is_energy_capability(self) -> bool:
+        """True when the parent capability is an energy/power reporting one."""
+        cap = (self.ref.capability_id or "").lower()
+        return any(
+            k in cap
+            for k in ("powerconsumption", "powermeter", "energymeter", "powerusage", "energyusage")
+        )
+
+    # -----------------------------------------------------------------
+    # Core HA sensor properties
+    # -----------------------------------------------------------------
+
     @property
     def native_unit_of_measurement(self) -> str | None:
         if self.device_class == SensorDeviceClass.TIMESTAMP:
             return None
 
+        # 1. Explicit unit from SmartThings payload
         unit = self._attr_unit()
         if unit is not None:
-            if unit == 'C': return '°C'
-            if unit == 'F': return '°F'
-            if unit == 'K': return 'K'
+            if unit == "C":
+                return "°C"
+            if unit == "F":
+                return "°F"
+            if unit == "K":
+                return "K"
+            # Normalise energy-related units
+            normalised = ENERGY_UNIT_MAP.get(unit)
+            if normalised:
+                return normalised
             return unit
 
-        attr = (self._sub_attribute or self.ref.attribute or "").lower()
+        # 2. Infer unit from attribute name / device class
+        attr = self._effective_attr()
+        dc = self.device_class
+
+        if dc == SensorDeviceClass.POWER:
+            return "W"
+        if dc == SensorDeviceClass.ENERGY:
+            return "Wh"
+        if dc == SensorDeviceClass.VOLTAGE:
+            return "V"
+        if dc == SensorDeviceClass.CURRENT:
+            return "A"
+
         val = self.native_value
-        
-        if isinstance(val, (int, float)) and 0 <= float(val) <= 100:
-            if "progress" in attr or "percentage" in attr or attr.endswith("usage"):
-                return "%"
-        
+        if (
+            isinstance(val, (int, float))
+            and 0 <= float(val) <= 100
+            and ("progress" in attr or "percentage" in attr or attr.endswith("usage"))
+        ):
+            return "%"
+
         return None
 
     @property
     def device_class(self) -> SensorDeviceClass | None:
-        attr = (self._sub_attribute or self.ref.attribute or "").lower()
-        
+        attr = self._effective_attr()
+
+        # Timestamps
         if isinstance(self.native_value, datetime):
             return SensorDeviceClass.TIMESTAMP
-            
         if "time" in attr and ("completion" in attr or "end" in attr):
             return SensorDeviceClass.TIMESTAMP
 
-        if attr == "battery": return SensorDeviceClass.BATTERY
-        if attr in {"temperature", "measuredtemperature", "oventemperature", "meatprobetemperature"} or attr.endswith("temperature"):
+        # Battery
+        if attr == "battery":
+            return SensorDeviceClass.BATTERY
+
+        # Temperature
+        if (
+            attr in {"temperature", "measuredtemperature", "oventemperature", "meatprobetemperature"}
+            or attr.endswith("temperature")
+        ):
             return SensorDeviceClass.TEMPERATURE
-        if attr.endswith("humidity"): return SensorDeviceClass.HUMIDITY
-        if attr.endswith("power"): return SensorDeviceClass.POWER
-        if attr.endswith("energy"): return SensorDeviceClass.ENERGY
-            
+
+        # Humidity
+        if attr.endswith("humidity"):
+            return SensorDeviceClass.HUMIDITY
+
+        # --- Energy / Power ---
+        if attr in {"power", "deltaenergy"} or attr.endswith("power"):
+            return SensorDeviceClass.POWER
+        if attr in {"energy", "powerenergy", "totalenergy"} or attr.endswith("energy"):
+            return SensorDeviceClass.ENERGY
+        if "voltage" in attr:
+            return SensorDeviceClass.VOLTAGE
+        if attr in {"current", "amperage"} or "current" in attr and "state" not in attr:
+            return SensorDeviceClass.CURRENT
+        if "powerfactor" in attr or "power_factor" in attr:
+            return SensorDeviceClass.POWER_FACTOR
+        if attr == "frequency" or attr.endswith("frequency"):
+            return SensorDeviceClass.FREQUENCY
+
+        return None
+
+    @property
+    def state_class(self) -> SensorStateClass | None:
+        """Return the state class so HA records long-term statistics."""
+        dc = self.device_class
+        if dc is None:
+            return None
+
+        attr = self._effective_attr()
+
+        # Cumulative energy values → TOTAL_INCREASING
+        if dc == SensorDeviceClass.ENERGY:
+            # deltaEnergy is a differential, not cumulative
+            if "delta" in attr:
+                return SensorStateClass.MEASUREMENT
+            return SensorStateClass.TOTAL_INCREASING
+
+        # Instantaneous measurements
+        if dc in {
+            SensorDeviceClass.POWER,
+            SensorDeviceClass.VOLTAGE,
+            SensorDeviceClass.CURRENT,
+            SensorDeviceClass.POWER_FACTOR,
+            SensorDeviceClass.FREQUENCY,
+            SensorDeviceClass.TEMPERATURE,
+            SensorDeviceClass.HUMIDITY,
+            SensorDeviceClass.BATTERY,
+        }:
+            return SensorStateClass.MEASUREMENT
+
+        return None
+
+    @property
+    def suggested_display_precision(self) -> int | None:
+        dc = self.device_class
+        if dc == SensorDeviceClass.ENERGY:
+            return 2
+        if dc == SensorDeviceClass.POWER:
+            return 1
+        if dc == SensorDeviceClass.VOLTAGE:
+            return 1
+        if dc == SensorDeviceClass.CURRENT:
+            return 2
         return None
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         base_payload = self._attr_payload() or {}
-        
+
         if self._sub_attribute:
             return {
                 "parent_attribute": self.ref.attribute,
@@ -237,12 +348,12 @@ class SmartThingsDynamicSensor(SmartThingsDynamicBaseEntity, SensorEntity):
             "capability": self.ref.capability_id,
             "attribute": self.ref.attribute,
         }
-        
+
         if "timestamp" in base_payload:
             attrs["timestamp"] = base_payload.get("timestamp")
         if "unit" in base_payload:
             attrs["unit"] = base_payload.get("unit")
-            
+
         val = base_payload.get("value")
         if isinstance(val, dict):
             for k, v in val.items():

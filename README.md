@@ -298,7 +298,7 @@ Contributions are welcome! Please:
 - [ ] HACS default repository listing
 - [ ] Automatic device discovery (without manual device ID entry)
 - [ ] Lovelace dashboard cards for appliance controls
-- [ ] Energy monitoring integration
+- [x] Energy monitoring integration (state_class, device_class, unit normalisation for HA Energy Dashboard)
 
 ## License
 
