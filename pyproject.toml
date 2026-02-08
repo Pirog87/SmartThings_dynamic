@@ -12,6 +12,7 @@ dev = [
     "pytest-cov>=5.0",
     "aiohttp",
     "ruff>=0.4",
+    "voluptuous",
 ]
 
 [tool.pytest.ini_options]
