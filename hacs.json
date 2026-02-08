@@ -3,5 +3,5 @@
   "render_readme": true,
   "domains": ["sensor", "binary_sensor", "switch", "select", "number", "button", "vacuum", "camera"],
   "homeassistant": "2024.1.0",
-  "iot_class": "cloud_polling"
+  "iot_class": "cloud_push"
 }

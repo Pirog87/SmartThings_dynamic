@@ -3,11 +3,12 @@
   "name": "SmartThings Dynamic",
   "config_flow": true,
   "dependencies": [
-    "application_credentials"
+    "application_credentials",
+    "webhook"
   ],
-  "documentation": "https://developer.smartthings.com/docs/getting-started/architecture-of-smartthings",
-  "issue_tracker": "https://github.com/example/smartthings_dynamic/issues",
-  "iot_class": "cloud_polling",
-  "version": "2.1.1",
-  "codeowners": []
+  "documentation": "https://github.com/Pirog87/SmartThings_dynamic",
+  "issue_tracker": "https://github.com/Pirog87/SmartThings_dynamic/issues",
+  "iot_class": "cloud_push",
+  "version": "3.0.0",
+  "codeowners": ["@Pirog87"]
 }

@@ -30,6 +30,7 @@ After Samsung's December 2024 API changes that introduced stricter PAT token lim
   - Standard — core entities
   - `expose_command_buttons` — exposes all commands as button entities
   - `aggressive_mode` — creates additional controls from `supported*` attribute lists
+- **Webhook support** — optional real-time updates via SmartThings SmartApp webhooks, with automatic fallback to polling
 - **Custom service** `smartthings_dynamic.send_command` — send any command to any device, even if no entity exists for it
 - **Capability caching** — reduces API calls by caching SmartThings capability definitions
 - **Configurable polling** — default 30s, adjustable per your needs
@@ -137,35 +138,15 @@ Client Secret: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
 
 > ⚠️ **Save these values immediately!** The Client Secret is shown only once.
 
-### Step 3: Get your device IDs
+### Step 3: (Optional) List your devices
+
+You can preview your SmartThings devices before setting up the integration:
 
 ```bash
 smartthings devices
 ```
 
-This lists all devices with their IDs. You'll need these during integration setup.
-
-You can also get detailed info about a specific device:
-```bash
-smartthings devices:status <device-id>
-```
-
-### Step 4: Configure device IDs in secrets.yaml
-
-Add your device IDs to Home Assistant's `secrets.yaml` file. The integration references devices by these keys:
-
-```yaml
-# secrets.yaml
-st_vacuum_device_id: "d3adac46-506b-xxxx-xxxx-xxxxxxxxxxxx"        # Robot vacuum
-st_washer_device_id: "ed1401cd-1049-xxxx-xxxx-xxxxxxxxxxxx"        # Washing machine
-st_dryer_device_id: "31b3b12d-53a5-xxxx-xxxx-xxxxxxxxxxxx"        # Dryer
-st_fridge_device_id: "f2e920d8-edd6-xxxx-xxxx-xxxxxxxxxxxx"       # Refrigerator
-st_oven_device_id: "78b1e5f2-0209-xxxx-xxxx-xxxxxxxxxxxx"         # Oven
-st_microwave_device_id: "3d387ff7-f901-xxxx-xxxx-xxxxxxxxxxxx"    # Microwave
-st_dishwasher_device_id: "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"   # Dishwasher
-st_induction_device_id: "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"    # Induction hob
-# ... add all your devices
-```
+> **Note:** You no longer need to manually configure device IDs. The integration automatically discovers all devices during setup and lets you choose which ones to monitor.
 
 The naming convention is `st_<device_name>_device_id`. You can use any name you like (including custom nicknames for your appliances) — these keys are then referenced in your HA packages and automations:
 
@@ -180,13 +161,15 @@ template:
 
 > ⚠️ **Never commit `secrets.yaml` to your repository!** It's already excluded by `.gitignore`.
 
-### Step 5: Add the integration to Home Assistant
+### Step 4: Add the integration to Home Assistant
 
 1. Go to **Settings** → **Devices & Services** → **Add Integration**
 2. Search for **SmartThings Dynamic**
 3. Enter your **Client ID** and **Client Secret** from Step 2
 4. Complete the OAuth2 authorization flow
-5. Select the devices you want to integrate
+5. **Select the devices** you want to monitor from the automatically discovered list (all devices are selected by default)
+
+You can change the monitored devices at any time in the integration's **Options** (Settings → Devices & Services → SmartThings Dynamic → Configure).
 
 ## Usage
 
@@ -234,6 +217,24 @@ template:
 | `expose_command_buttons` | false | Create button entities for all commands |
 | `expose_raw_sensors` | false | Expose complex attributes as raw sensors |
 | `aggressive_mode` | false | Create extra controls from supported* lists |
+| `enable_webhook` | false | Enable webhook for real-time updates (requires external URL) |
+
+## Webhook (real-time updates)
+
+By default the integration polls the SmartThings API every 30 seconds. If you enable the **webhook** option, SmartThings will push device events to your Home Assistant instance in real-time, significantly reducing latency for state changes.
+
+### Requirements
+
+- Home Assistant must be accessible via an **external HTTPS URL** (e.g., Nabu Casa, reverse proxy with SSL).
+- The external URL must be configured in **Settings → System → Network → Home Assistant URL**.
+
+### How it works
+
+1. Enable the webhook in the integration options (**Settings → Devices & Services → SmartThings Dynamic → Configure**).
+2. The integration registers a webhook endpoint and listens for SmartThings SmartApp lifecycle events (PING, CONFIRMATION, EVENT).
+3. When a device event arrives, the coordinator data is patched in-place and entities refresh instantly.
+4. Polling is reduced to a 5-minute backup interval for consistency checks.
+5. If no external URL is available, the integration logs a warning and falls back to normal polling.
 
 ## Troubleshooting
 
@@ -274,11 +275,13 @@ custom_components/smartthings_dynamic/
 ├── button.py                # Button platform
 ├── vacuum.py                # Vacuum platform (Samsung JetBot)
 ├── camera.py                # Camera platform
+├── webhook.py               # Webhook handler for real-time events
 ├── application_credentials.py
 ├── manifest.json
 ├── services.yaml
 ├── strings.json
 └── translations/
+    ├── en.json              # English translation
     └── pl.json              # Polish translation
 ```
 
@@ -294,9 +297,9 @@ Contributions are welcome! Please:
 
 ## Roadmap
 
-- [ ] Webhook support for real-time updates (instead of polling)
-- [ ] HACS default repository listing
-- [ ] Automatic device discovery (without manual device ID entry)
+- [x] Webhook support for real-time updates (instead of polling)
+- [x] HACS default repository listing (manifest, hacs.json, translations)
+- [x] Automatic device discovery (without manual device ID entry)
 - [ ] Lovelace dashboard cards for appliance controls
 - [x] Energy monitoring integration (state_class, device_class, unit normalisation for HA Energy Dashboard)
 

@@ -39,6 +39,7 @@ _HA_MODULES: list[str] = [
     "homeassistant.components.camera",
     "homeassistant.components.vacuum",
     "homeassistant.components.application_credentials",
+    "homeassistant.components.webhook",
     "homeassistant.util",
     "homeassistant.util.dt",
 ]
@@ -61,6 +62,9 @@ def _install_ha_mocks() -> None:
     # --- homeassistant.config_entries ---
     ha_ce = sys.modules["homeassistant.config_entries"]
     ha_ce.ConfigEntry = MagicMock  # type: ignore[attr-defined]
+    ha_ce.ConfigFlowResult = dict  # type: ignore[attr-defined]
+    ha_ce.OptionsFlow = type("OptionsFlow", (), {})  # type: ignore[attr-defined]
+    ha_ce.callback = lambda fn: fn  # type: ignore[attr-defined]
 
     # --- homeassistant.exceptions ---
     ha_exc = sys.modules["homeassistant.exceptions"]
@@ -77,12 +81,17 @@ def _install_ha_mocks() -> None:
     # --- homeassistant.helpers.config_entry_oauth2_flow ---
     oauth_mod = sys.modules["homeassistant.helpers.config_entry_oauth2_flow"]
     oauth_mod.OAuth2Session = MagicMock  # type: ignore[attr-defined]
-    oauth_mod.AbstractOAuth2FlowHandler = type("AbstractOAuth2FlowHandler", (), {})  # type: ignore[attr-defined]
+    class _AbstractOAuth2FlowHandler:
+        def __init_subclass__(cls, **kw):
+            super().__init_subclass__()
+
+    oauth_mod.AbstractOAuth2FlowHandler = _AbstractOAuth2FlowHandler  # type: ignore[attr-defined]
     oauth_mod.async_get_config_entry_implementation = MagicMock  # type: ignore[attr-defined]
 
     # --- homeassistant.helpers.config_validation ---
     cv_mod = sys.modules["homeassistant.helpers.config_validation"]
     cv_mod.string = str  # type: ignore[attr-defined]
+    cv_mod.multi_select = lambda options: list  # type: ignore[attr-defined]
 
     # --- homeassistant.helpers.typing ---
     typing_mod = sys.modules["homeassistant.helpers.typing"]
@@ -163,6 +172,12 @@ def _install_ha_mocks() -> None:
     ac_mod.AuthImplementation = type("AuthImplementation", (), {})  # type: ignore[attr-defined]
     ac_mod.AuthorizationServer = MagicMock  # type: ignore[attr-defined]
     ac_mod.ClientCredential = MagicMock  # type: ignore[attr-defined]
+
+    # --- homeassistant.components.webhook ---
+    wh_mod = sys.modules["homeassistant.components.webhook"]
+    wh_mod.async_register = MagicMock()  # type: ignore[attr-defined]
+    wh_mod.async_unregister = MagicMock()  # type: ignore[attr-defined]
+    wh_mod.async_generate_url = MagicMock(return_value="https://example.com/api/webhook/abc123")  # type: ignore[attr-defined]
 
     # --- homeassistant (root) ---
     ha_root = sys.modules["homeassistant"]
