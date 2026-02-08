@@ -33,6 +33,36 @@ CONF_AGGRESSIVE_MODE: Final = "aggressive_mode"
 # Aggressive mode enables additional heuristics for creating control entities
 DEFAULT_AGGRESSIVE_MODE: Final = True
 
+# --- ENERGY MONITORING ---
+# Sub-keys extracted from powerConsumption / custom energy capability dicts.
+ENERGY_SUB_ATTRIBUTES: Final[list[str]] = [
+    "energy",        # cumulative energy (Wh)
+    "deltaEnergy",   # energy since last report (Wh)
+    "power",         # instantaneous power (W)
+    "powerEnergy",   # energy at current power level (Wh)
+    "start",         # measurement period start
+    "end",           # measurement period end
+]
+
+# Unit normalisation map – SmartThings sometimes sends long-form or variant units.
+ENERGY_UNIT_MAP: Final[dict[str, str]] = {
+    "W": "W",
+    "Watts": "W",
+    "watt": "W",
+    "kW": "kW",
+    "Kilowatts": "kW",
+    "Wh": "Wh",
+    "watt-hours": "Wh",
+    "kWh": "kWh",
+    "kilowatt-hours": "kWh",
+    "V": "V",
+    "Volts": "V",
+    "A": "A",
+    "Amps": "A",
+    "mA": "mA",
+    "%": "%",
+}
+
 # Platforms
 PLATFORMS: Final[list[str]] = [
     "sensor",

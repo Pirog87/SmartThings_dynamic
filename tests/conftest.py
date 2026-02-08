@@ -125,6 +125,7 @@ def _install_ha_mocks() -> None:
     sensor_mod = sys.modules["homeassistant.components.sensor"]
     sensor_mod.SensorEntity = type("SensorEntity", (_CoordinatorEntity,), {})  # type: ignore[attr-defined]
     sensor_mod.SensorDeviceClass = MagicMock()  # type: ignore[attr-defined]
+    sensor_mod.SensorStateClass = MagicMock()  # type: ignore[attr-defined]
 
     # --- homeassistant.components.binary_sensor ---
     bs_mod = sys.modules["homeassistant.components.binary_sensor"]
