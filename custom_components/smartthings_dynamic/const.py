@@ -30,7 +30,6 @@ CONF_EXPOSE_RAW_SENSORS: Final = "expose_raw_sensors"
 CONF_INCLUDE_CONTROL_ATTRIBUTES_AS_SENSORS: Final = "include_control_attributes_as_sensors"
 CONF_AGGRESSIVE_MODE: Final = "aggressive_mode"
 CONF_DEVICE_IDS: Final = "device_ids"
-CONF_ENABLE_WEBHOOK: Final = "enable_webhook"
 
 # Aggressive mode enables additional heuristics for creating control entities
 DEFAULT_AGGRESSIVE_MODE: Final = True

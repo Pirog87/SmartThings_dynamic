@@ -58,10 +58,13 @@ async def async_unregister_webhook(
     hass: HomeAssistant,
     entry_id: str,
 ) -> None:
-    """Unregister the webhook."""
+    """Unregister the webhook (safe to call even if not registered)."""
     wh_id = _webhook_id_for_entry(entry_id)
-    webhook.async_unregister(hass, wh_id)
-    _LOGGER.debug("Unregistered webhook %s", wh_id)
+    try:
+        webhook.async_unregister(hass, wh_id)
+        _LOGGER.debug("Unregistered webhook %s", wh_id)
+    except KeyError:
+        pass  # webhook was never registered (no external URL)
 
 
 # ── Incoming event handler ──────────────────────────────────────────────────

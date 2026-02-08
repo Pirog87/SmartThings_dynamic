@@ -26,7 +26,7 @@ from . import sensor as _sensor  # noqa: F401
 from . import switch as _switch  # noqa: F401
 from . import vacuum as _vacuum  # noqa: F401
 from .api import SmartThingsApi
-from .const import CONF_ENABLE_WEBHOOK, DOMAIN, PLATFORMS, WEBHOOK_BACKUP_POLL_INTERVAL
+from .const import DOMAIN, PLATFORMS, WEBHOOK_BACKUP_POLL_INTERVAL
 from .coordinator import SmartThingsDynamicCoordinator
 from .webhook import async_register_webhook, async_unregister_webhook, webhook_url
 
@@ -75,16 +75,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
-    # --- Webhook for real-time updates ---
-    use_webhook = bool(entry.options.get(CONF_ENABLE_WEBHOOK, False))
-    if use_webhook:
+    # --- Webhook for real-time updates (auto-detect) ---
+    wh_url = webhook_url(hass, entry.entry_id)
+    if wh_url:
         await async_register_webhook(hass, entry.entry_id)
-        wh_url = webhook_url(hass, entry.entry_id)
-        if wh_url:
-            _LOGGER.info("Webhook active at %s – reduce polling to %s", wh_url, WEBHOOK_BACKUP_POLL_INTERVAL)
-            coordinator.update_interval = WEBHOOK_BACKUP_POLL_INTERVAL
-        else:
-            _LOGGER.warning("Webhook enabled but no external URL configured in HA – falling back to polling")
+        _LOGGER.info(
+            "External URL detected – webhook active at %s, polling reduced to %s",
+            wh_url, WEBHOOK_BACKUP_POLL_INTERVAL,
+        )
+        coordinator.update_interval = WEBHOOK_BACKUP_POLL_INTERVAL
+    else:
+        _LOGGER.info("No external URL configured – using polling only (interval %s)", coordinator.update_interval)
 
     # Reload when options change
     entry.async_on_unload(entry.add_update_listener(_async_update_listener))
@@ -99,9 +100,8 @@ async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> Non
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
-    # Unregister webhook if active
-    if bool(entry.options.get(CONF_ENABLE_WEBHOOK, False)):
-        await async_unregister_webhook(hass, entry.entry_id)
+    # Unregister webhook (no-op if not registered)
+    await async_unregister_webhook(hass, entry.entry_id)
 
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:
