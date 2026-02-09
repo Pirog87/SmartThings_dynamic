@@ -30,7 +30,10 @@ After Samsung's December 2024 API changes that introduced stricter PAT token lim
   - Standard — core entities
   - `expose_command_buttons` — exposes all commands as button entities
   - `aggressive_mode` — creates additional controls from `supported*` attribute lists
-- **Webhook support** — optional real-time updates via SmartThings SmartApp webhooks, with automatic fallback to polling
+- **Automatic device discovery** — all SmartThings devices are discovered during setup; choose which ones to monitor via a multi-select UI
+- **Energy monitoring** — full support for HA Energy Dashboard (`state_class`, `device_class`, unit normalisation for power, energy, voltage, current)
+- **Automatic webhook** — real-time updates via SmartThings webhooks when external URL is available, with automatic fallback to polling
+- **HACS ready** — installable via HACS as a custom repository
 - **Custom service** `smartthings_dynamic.send_command` — send any command to any device, even if no entity exists for it
 - **Capability caching** — reduces API calls by caching SmartThings capability definitions
 - **Configurable polling** — default 30s, adjustable per your needs
@@ -293,11 +296,7 @@ Contributions are welcome! Please:
 
 ## Roadmap
 
-- [x] Webhook support for real-time updates (instead of polling)
-- [x] HACS default repository listing (manifest, hacs.json, translations)
-- [x] Automatic device discovery (without manual device ID entry)
 - [ ] Lovelace dashboard cards for appliance controls
-- [x] Energy monitoring integration (state_class, device_class, unit normalisation for HA Energy Dashboard)
 
 ## License
 
