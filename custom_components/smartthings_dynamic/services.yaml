@@ -32,3 +32,45 @@ send_command:
       description: Optional config entry id if you have more than one SmartThings Dynamic instance.
       selector:
         text:
+
+dump_capability:
+  name: Dump capability definition (read-only)
+  description: >-
+    Fetch the raw SmartThings capability definition (attributes, commands and their argument
+    schemas). Performs a GET request only – it never sends a command to a device.
+  fields:
+    capability:
+      required: true
+      example: "samsungce.robotCleanerReservation"
+      selector:
+        text:
+    version:
+      required: false
+      default: 1
+      selector:
+        number:
+          min: 1
+          max: 10
+          mode: box
+    config_entry_id:
+      required: false
+      description: Optional config entry id if you have more than one SmartThings Dynamic instance.
+      selector:
+        text:
+
+dump_device:
+  name: Dump device description and status (read-only)
+  description: >-
+    Fetch the full device description and status straight from the SmartThings API, without the
+    255-character truncation Home Assistant applies to entity states. Performs GET requests only.
+  fields:
+    device_id:
+      required: true
+      example: "d3adac46-506b-931c-ce10-5314e0282074"
+      selector:
+        text:
+    config_entry_id:
+      required: false
+      description: Optional config entry id if you have more than one SmartThings Dynamic instance.
+      selector:
+        text:

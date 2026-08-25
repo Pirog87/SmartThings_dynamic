@@ -59,6 +59,13 @@ def _install_ha_mocks() -> None:
     ha_core.ServiceCall = MagicMock  # type: ignore[attr-defined]
     ha_core.callback = lambda fn: fn  # type: ignore[attr-defined]
 
+    class _SupportsResponse:
+        NONE = "none"
+        OPTIONAL = "optional"
+        ONLY = "only"
+
+    ha_core.SupportsResponse = _SupportsResponse  # type: ignore[attr-defined]
+
     # --- homeassistant.config_entries ---
     ha_ce = sys.modules["homeassistant.config_entries"]
     ha_ce.ConfigEntry = MagicMock  # type: ignore[attr-defined]

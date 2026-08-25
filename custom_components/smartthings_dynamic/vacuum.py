@@ -10,6 +10,7 @@ Docs:
 from __future__ import annotations
 
 import logging
+from contextlib import suppress
 from typing import Any
 
 from homeassistant.components.vacuum import (
@@ -30,6 +31,19 @@ _LOGGER = logging.getLogger(__name__)
 # Samsung robot cleaners expose a rich operating state in this custom capability.
 VAC_CAP = "samsungce.robotCleanerOperatingState"
 BAT_CAP = "battery"
+
+# Companion capabilities that mirror what the SmartThings mobile app offers.
+TURBO_CAP = "robotCleanerTurboMode"
+TYPE_CAP = "samsungce.robotCleanerCleaningType"
+WATER_CAP = "samsungce.robotCleanerWaterSprayLevel"
+DRIVING_CAP = "samsungce.robotCleanerDrivingMode"
+MODE_CAP = "samsungce.robotCleanerCleaningMode"
+AREA_INFO_CAP = "samsungce.robotCleanerMapAreaInfo"
+MAP_INFO_CAP = "samsungce.robotCleanerMapCleaningInfo"
+
+# robotCleanerTurboMode publishes no "supported values" attribute, so we fall back to
+# the values Samsung robot cleaners use. The reported value is always included as well.
+TURBO_MODES: tuple[str, ...] = ("extraSilence", "silence", "off", "on")
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities) -> None:
@@ -100,8 +114,8 @@ def _map_operating_state_to_activity(state: str | None) -> VacuumActivity:
     if "home" in s or "return" in s or "homing" in s:
         return VacuumActivity.RETURNING
 
-    # Docked / charging
-    if "charge" in s or "dock" in s:
+    # Docked / charging ("charging", "charged", "chargingForRemainingJob", "flexCharged", ...)
+    if "charg" in s or "dock" in s:
         return VacuumActivity.DOCKED
 
     # Cleaning-ish (Samsung adds many detailed states)
@@ -126,14 +140,6 @@ def _map_operating_state_to_activity(state: str | None) -> VacuumActivity:
 class SmartThingsDynamicVacuum(SmartThingsDynamicBaseEntity, StateVacuumEntity):
     """Vacuum entity mapped to SmartThings robot cleaner capabilities."""
 
-    _attr_supported_features = (
-        VacuumEntityFeature.STATE
-        | VacuumEntityFeature.START
-        | VacuumEntityFeature.PAUSE
-        | VacuumEntityFeature.STOP
-        | VacuumEntityFeature.RETURN_HOME
-    )
-
     def __init__(
         self,
         coordinator,
@@ -153,54 +159,113 @@ class SmartThingsDynamicVacuum(SmartThingsDynamicBaseEntity, StateVacuumEntity):
         )
         self._api = api
 
+        features = (
+            VacuumEntityFeature.STATE
+            | VacuumEntityFeature.START
+            | VacuumEntityFeature.PAUSE
+            | VacuumEntityFeature.STOP
+            | VacuumEntityFeature.RETURN_HOME
+        )
+        if self._cap(TURBO_CAP):
+            features |= VacuumEntityFeature.FAN_SPEED
+        self._attr_supported_features = features
+
+    # --- capability access -------------------------------------------------
+
+    def _cap(self, capability_id: str) -> dict[str, Any]:
+        cap_status = get_capability_status(
+            self.coordinator.data or {}, self.ref.device_id, "main", capability_id
+        )
+        return cap_status if isinstance(cap_status, dict) else {}
+
+    def _value(self, capability_id: str, attribute: str) -> Any:
+        payload = self._cap(capability_id).get(attribute)
+        if isinstance(payload, dict):
+            return payload.get("value")
+        return None
+
+    # --- state -------------------------------------------------------------
+
     @property
     def activity(self) -> VacuumActivity:
-        cap_status = get_capability_status(self.coordinator.data or {}, self.ref.device_id, "main", VAC_CAP)
-        raw = (cap_status.get("operatingState") or {}).get("value") if isinstance(cap_status, dict) else None
+        raw = self._value(VAC_CAP, "operatingState")
         return _map_operating_state_to_activity(str(raw) if raw is not None else None)
 
     # Battery level is now handled by a separate sensor entity
     # This follows HA 2026.8+ deprecation guidelines
 
+    # --- suction power (robotCleanerTurboMode) -----------------------------
+
+    @property
+    def fan_speed(self) -> str | None:
+        value = self._value(TURBO_CAP, "robotCleanerTurboMode")
+        return str(value) if value is not None else None
+
+    @property
+    def fan_speed_list(self) -> list[str]:
+        if not self._cap(TURBO_CAP):
+            return []
+        options = list(TURBO_MODES)
+        current = self.fan_speed
+        if current is not None and current not in options:
+            options.append(current)
+        return options
+
+    async def async_set_fan_speed(self, fan_speed: str, **kwargs: Any) -> None:
+        await self._try_cmd("setRobotCleanerTurboMode", [fan_speed], capability=TURBO_CAP)
+        await self.coordinator.async_request_refresh()
+
+    # --- attributes --------------------------------------------------------
+
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        cap_status = get_capability_status(self.coordinator.data or {}, self.ref.device_id, "main", VAC_CAP)
-        if not isinstance(cap_status, dict):
-            return {}
+        data: dict[str, Any] = {
+            "operating_state": self._value(VAC_CAP, "operatingState"),
+            "cleaning_step": self._value(VAC_CAP, "cleaningStep"),
+            "homing_reason": self._value(VAC_CAP, "homingReason"),
+            "map_based_available": self._value(VAC_CAP, "isMapBasedOperationAvailable"),
+            # Mirrors of the mobile app's cleaning options.
+            "cleaning_mode": self._value(MODE_CAP, "cleaningMode"),
+            "cleaning_type": self._value(TYPE_CAP, "cleaningType"),
+            "water_spray_level": self._value(WATER_CAP, "waterSprayLevel"),
+            "driving_mode": self._value(DRIVING_CAP, "drivingMode"),
+            # Map info is read-only in the SmartThings API – see docs/samsung-robot-cleaner.md
+            "map_areas": self._value(AREA_INFO_CAP, "areaInfo"),
+            "current_area": self._value(MAP_INFO_CAP, "area"),
+            "cleaned_extent": self._value(MAP_INFO_CAP, "cleanedExtent"),
+            "remaining_time": self._value(MAP_INFO_CAP, "remainingTime"),
+        }
 
-        def _v(attr: str) -> Any:
-            payload = cap_status.get(attr)
-            if isinstance(payload, dict):
-                return payload.get("value")
-            return None
+        battery = self._value(BAT_CAP, "battery")
+        if battery is not None:
+            with suppress(TypeError, ValueError):
+                data["battery_level"] = int(battery)
 
-        data: dict[str, Any] = {}
-        data["operating_state"] = _v("operatingState")
-        data["cleaning_step"] = _v("cleaningStep")
-        data["homing_reason"] = _v("homingReason")
-        data["map_based_available"] = _v("isMapBasedOperationAvailable")
-        
-        # Add battery info to attributes if available
-        bat_status = get_capability_status(self.coordinator.data or {}, self.ref.device_id, "main", BAT_CAP)
-        if isinstance(bat_status, dict):
-            battery = (bat_status.get("battery") or {}).get("value")
-            if battery is not None:
-                try:
-                    data["battery_level"] = int(battery)
-                except (TypeError, ValueError):
-                    pass
-        
         return {k: v for k, v in data.items() if v is not None}
 
-    async def _try_cmd(self, command: str, args: list[Any] | None = None) -> bool:
+    # --- commands ----------------------------------------------------------
+
+    async def _try_cmd(
+        self,
+        command: str,
+        args: list[Any] | None = None,
+        *,
+        capability: str = VAC_CAP,
+    ) -> bool:
         try:
-            await self._api.async_execute_command(self.ref.device_id, "main", VAC_CAP, command, args or [])
+            await self._api.async_execute_command(
+                self.ref.device_id, "main", capability, command, args or []
+            )
             return True
         except Exception as err:  # noqa: BLE001
             _LOGGER.debug("Vacuum command %s failed: %s", command, err)
             return False
 
     async def async_start(self) -> None:
+        # A paused robot has to be resumed; `start` restarts the job from scratch.
+        if self.activity == VacuumActivity.PAUSED and await self._try_cmd("resume"):
+            await self.coordinator.async_request_refresh()
+            return
         await self._try_cmd("start")
         await self.coordinator.async_request_refresh()
 
