@@ -239,3 +239,121 @@ class TestCameraConstants:
 
     def test_image_capture_cap(self):
         assert IMAGE_CAPTURE_CAP == "imageCapture"
+
+
+# ─── videoCapture: clip thumbnail camera ───────────────────────────────────
+
+from unittest.mock import AsyncMock, MagicMock  # noqa: E402
+
+from custom_components.smartthings_dynamic import camera as camera_mod  # noqa: E402
+from custom_components.smartthings_dynamic.camera import (  # noqa: E402
+    VIDEO_CAPTURE_CAP,
+    SmartThingsVideoCaptureCamera,
+    async_download_media,
+)
+
+
+def _video_camera(clip_value: Any, api: Any = None) -> SmartThingsVideoCaptureCamera:
+    from custom_components.smartthings_dynamic.entity import EntityRef
+
+    clip = {"clip": {"value": clip_value, "timestamp": "2026-11-07T12:39:11Z"}}
+    data = _make_status({"main": {VIDEO_CAPTURE_CAP: clip}})
+    coordinator = MagicMock()
+    coordinator.data = data
+    cam = object.__new__(SmartThingsVideoCaptureCamera)
+    cam.coordinator = coordinator
+    cam.ref = EntityRef(device_id="dev-1", component_id="main", capability_id=VIDEO_CAPTURE_CAP, attribute="clip")
+    cam._api = api
+    cam.hass = MagicMock()
+    return cam
+
+
+CLIP = {
+    "clipPath": "https://mediaserv.example.st-av.net/clip?id=1",
+    "thumbnailPath": "https://mediaserv.example.st-av.net/image?id=1",
+    "status": "COMPLETE",
+    "correlationId": "abc",
+}
+
+
+class TestVideoCaptureCamera:
+    def test_urls_from_clip(self):
+        cam = _video_camera(CLIP)
+        assert cam.thumbnail_url() == CLIP["thumbnailPath"]
+        assert cam.clip_url() == CLIP["clipPath"]
+
+    def test_attributes(self):
+        attrs = _video_camera(CLIP).extra_state_attributes
+        assert attrs["thumbnail_url"] == CLIP["thumbnailPath"]
+        assert attrs["clip_status"] == "COMPLETE"
+        assert attrs["correlation_id"] == "abc"
+        assert attrs["clip_time"] == "2026-11-07T12:39:11Z"
+        assert attrs["clip_keys"] == sorted(CLIP)
+
+    def test_no_urls(self):
+        cam = _video_camera({"status": "COMPLETE"})
+        assert cam.thumbnail_url() is None
+        assert "thumbnail_url" not in cam.extra_state_attributes
+
+    async def test_image_downloads_thumbnail_with_token(self):
+        api = MagicMock()
+        api.async_fetch_media = AsyncMock(return_value=b"jpeg")
+        cam = _video_camera(CLIP, api)
+        assert await cam.async_camera_image() == b"jpeg"
+        api.async_fetch_media.assert_awaited_once_with(CLIP["thumbnailPath"])
+        # Same URL is served from cache.
+        assert await cam.async_camera_image() == b"jpeg"
+        assert api.async_fetch_media.await_count == 1
+
+    async def test_image_none_without_thumbnail(self):
+        cam = _video_camera({"status": "COMPLETE"}, MagicMock())
+        assert await cam.async_camera_image() is None
+
+
+class TestDownloadMedia:
+    async def test_falls_back_to_plain_request(self, monkeypatch):
+        api = MagicMock()
+        api.async_fetch_media = AsyncMock(side_effect=RuntimeError("403"))
+        resp = MagicMock()
+        resp.raise_for_status = MagicMock()
+        resp.read = AsyncMock(return_value=b"plain")
+        session = MagicMock()
+        session.get = AsyncMock(return_value=resp)
+        monkeypatch.setattr(camera_mod, "async_get_clientsession", lambda hass: session)
+        assert await async_download_media(MagicMock(), api, "https://x/y") == b"plain"
+
+    async def test_returns_none_when_all_fail(self, monkeypatch):
+        from aiohttp import ClientError
+
+        api = MagicMock()
+        api.async_fetch_media = AsyncMock(side_effect=RuntimeError("403"))
+        session = MagicMock()
+        session.get = AsyncMock(side_effect=ClientError("boom"))
+        monkeypatch.setattr(camera_mod, "async_get_clientsession", lambda hass: session)
+        assert await async_download_media(MagicMock(), api, "https://x/y") is None
+
+
+class TestImageCaptureThrottle:
+    async def test_take_sent_once_per_interval(self, monkeypatch):
+        from custom_components.smartthings_dynamic.entity import EntityRef
+
+        data = _make_status({"main": {IMAGE_CAPTURE_CAP: {"image": {"value": "https://img/1"}}}})
+        coordinator = MagicMock()
+        coordinator.data = data
+        coordinator.async_request_refresh = AsyncMock()
+        api = MagicMock()
+        api.async_execute_command = AsyncMock()
+        api.async_fetch_media = AsyncMock(return_value=b"img")
+        monkeypatch.setattr(camera_mod, "_TAKE_DELAY_S", 0)
+
+        cam = object.__new__(SmartThingsImageCaptureCamera)
+        cam.coordinator = coordinator
+        cam.ref = EntityRef(device_id="dev-1", component_id="main", capability_id=IMAGE_CAPTURE_CAP, attribute="image")
+        cam._api = api
+        cam.hass = MagicMock()
+        cam._last_take = 0.0
+
+        assert await cam.async_camera_image() == b"img"
+        assert await cam.async_camera_image() == b"img"
+        assert api.async_execute_command.await_count == 1
+        api.async_fetch_media.assert_awaited_once_with("https://img/1")

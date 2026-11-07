@@ -108,6 +108,18 @@ class SmartThingsApi:
                 raise ConfigEntryAuthFailed("SmartThings authentication failed") from err
             raise
 
+    async def async_fetch_media(self, url: str) -> bytes:
+        """Download a media file (camera image, clip thumbnail) with the OAuth token.
+
+        Unlike ``async_request_raw`` this never raises ``ConfigEntryAuthFailed``:
+        media hosts can refuse a perfectly valid token (403), and that must not
+        send the whole config entry into re-authentication.  HTTP errors are
+        raised as ``ClientResponseError`` for the caller to handle.
+        """
+        resp = await self._oauth.async_request("get", url, headers={"Accept": "image/*,*/*"})
+        resp.raise_for_status()
+        return await resp.read()
+
     async def async_get_capability_definition(self, capability_id: str, version: int) -> dict[str, Any]:
         key = (capability_id, int(version))
         if key in self._capability_cache:
