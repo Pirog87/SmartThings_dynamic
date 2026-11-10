@@ -30,7 +30,9 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from datetime import datetime
 from typing import Any
+from urllib.parse import quote
 
 from aiohttp import ClientError
 
@@ -40,7 +42,7 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .api import SmartThingsApi
-from .const import DOMAIN
+from .const import CONF_VIEWINSIDE_CID, DOMAIN
 from .entity import EntityRef, SmartThingsDynamicBaseEntity
 from .helpers import get_capability_status
 
@@ -59,6 +61,33 @@ _CLIP_VIDEO_KEYS = ("clipPath", "clipUrl", "clip", "videoPath")
 
 # SmartThings UDO endpoint for downloading fridge camera images.
 VIEW_INSIDE_IMAGE_URL = "https://client.smartthings.com/udo/file_links/{file_id}"
+# A fridge photo link expires about 10 minutes after the fridge publishes it;
+# ``viewInside.refreshAll`` makes the fridge publish fresh links.  Ask at most
+# this often, so a dashboard left open does not flood the fridge.
+_VIEW_INSIDE_REFRESH_MIN_INTERVAL_S = 60.0
+
+
+def view_inside_image_url(file_id: str, device_id: str | None = None, cid: str | None = None) -> str:
+    """Build the download URL of one fridge photo.
+
+    The endpoint is undocumented.  Community projects call it with the device
+    id (``di``) and the Samsung app client id (``cid``); ``cid`` is only added
+    when the user set it in the integration options.
+    """
+    url = VIEW_INSIDE_IMAGE_URL.format(file_id=quote(file_id, safe=""))
+    params = [("di", device_id), ("cid", cid)]
+    query = "&".join(f"{k}={quote(v, safe='')}" for k, v in params if v)
+    return f"{url}?{query}" if query else url
+
+
+def _parse_ts(value: Any) -> float | None:
+    """Parse an ISO-8601 timestamp (``2026-11-10T11:50:16Z``) to epoch seconds."""
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp()
+    except ValueError:
+        return None
 
 # Delay after ``take`` to give the device time to upload the image.
 _TAKE_DELAY_S = 2.0
@@ -167,6 +196,7 @@ async def async_setup_entry(
                                         attribute="contents",
                                     ),
                                     name_suffix="viewInside",
+                                    cid=str(entry.options.get(CONF_VIEWINSIDE_CID) or "").strip() or None,
                                 )
                             )
 
@@ -344,12 +374,16 @@ class SmartThingsImageCaptureCamera(_MediaCacheMixin, SmartThingsDynamicBaseEnti
 # ─── samsungce.viewInside camera (fridge) ──────────────────────────────────
 
 
-class SmartThingsViewInsideCamera(SmartThingsDynamicBaseEntity, Camera):
+class SmartThingsViewInsideCamera(_MediaCacheMixin, SmartThingsDynamicBaseEntity, Camera):
     """Camera using Samsung's ``samsungce.viewInside`` capability.
 
-    Samsung Family Hub refrigerators store internal camera images as file IDs
-    in the ``contents`` attribute.  The most recent image is downloaded via an
-    authenticated request to the SmartThings UDO file_links endpoint.
+    Samsung Family Hub refrigerators take stills of the shelves after the door
+    closes and publish them as file IDs in the ``contents`` attribute.  The most
+    recent image is downloaded with the integration's OAuth token from the
+    SmartThings UDO ``file_links`` endpoint.  A link expires about 10 minutes
+    after it is published; an expired or refused link makes the camera send
+    ``viewInside.refreshAll`` (at most once a minute) and keep showing the last
+    downloaded photo meanwhile.
     """
 
     def __init__(
@@ -362,6 +396,7 @@ class SmartThingsViewInsideCamera(SmartThingsDynamicBaseEntity, Camera):
         device: dict[str, Any],
         ref: EntityRef,
         name_suffix: str | None = None,
+        cid: str | None = None,
     ) -> None:
         Camera.__init__(self)
         SmartThingsDynamicBaseEntity.__init__(
@@ -369,30 +404,63 @@ class SmartThingsViewInsideCamera(SmartThingsDynamicBaseEntity, Camera):
         )
         self._api = api
         self.hass = hass
+        self._cid = cid
+        self._last_refresh = 0.0
 
-    def _get_latest_file_id(self) -> str | None:
-        """Extract the most recent fileId from the contents attribute."""
-        cap = get_capability_status(
+    def _cap(self) -> dict[str, Any]:
+        return get_capability_status(
             self.coordinator.data or {},
             self.ref.device_id,
             self.ref.component_id,
             VIEW_INSIDE_CAP,
-        )
-        contents_payload = cap.get("contents")
+        ) or {}
+
+    def _latest_item(self) -> dict[str, Any] | None:
+        """Return the most recent photo record ``{fileId, expiredTime, ...}``."""
+        contents_payload = self._cap().get("contents")
         if not isinstance(contents_payload, dict):
             return None
-
         contents = contents_payload.get("value")
         if not isinstance(contents, list) or not contents:
             return None
-
         # The last item is usually the most recent photo.
         latest = contents[-1]
         if isinstance(latest, dict):
-            return latest.get("fileId") or latest.get("id")
-        if isinstance(latest, str):
             return latest
+        if isinstance(latest, str):
+            return {"fileId": latest}
         return None
+
+    def _get_latest_file_id(self) -> str | None:
+        """Extract the most recent fileId from the contents attribute."""
+        item = self._latest_item()
+        if not item:
+            return None
+        return item.get("fileId") or item.get("id")
+
+    def _link_expired(self, now: float | None = None) -> bool:
+        item = self._latest_item() or {}
+        exp = _parse_ts(item.get("expiredTime"))
+        return exp is not None and exp <= (now if now is not None else time.time())
+
+    async def _async_request_new_links(self) -> None:
+        """Ask the fridge to publish fresh photo links (rate limited)."""
+        now = time.monotonic()
+        if now - self._last_refresh < _VIEW_INSIDE_REFRESH_MIN_INTERVAL_S:
+            return
+        self._last_refresh = now
+        try:
+            await self._api.async_execute_command(
+                device_id=self.ref.device_id,
+                component=self.ref.component_id,
+                capability=VIEW_INSIDE_CAP,
+                command="refreshAll",
+                arguments=[],
+            )
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.debug("viewInside.refreshAll failed for %s: %s", self.ref.device_id, err)
+            return
+        await self.coordinator.async_request_refresh()
 
     async def async_camera_image(
         self, width: int | None = None, height: int | None = None
@@ -400,37 +468,46 @@ class SmartThingsViewInsideCamera(SmartThingsDynamicBaseEntity, Camera):
         file_id = self._get_latest_file_id()
         if not file_id:
             _LOGGER.debug("No viewInside fileId available for %s", self.ref.device_id)
-            return None
+            await self._async_request_new_links()
+            return self._cache_bytes
 
-        url = VIEW_INSIDE_IMAGE_URL.format(file_id=file_id)
-        try:
-            return await self._api.async_request_raw("get", url)
-        except Exception as err:  # noqa: BLE001
-            _LOGGER.debug("Failed to fetch viewInside image for %s: %s", self.ref.device_id, err)
-            return None
+        url = view_inside_image_url(file_id, self.ref.device_id, self._cid)
+        if url == self._cache_url and self._cache_bytes:
+            return self._cache_bytes
+        if self._link_expired():
+            await self._async_request_new_links()
+            return self._cache_bytes
+
+        data = await self._async_cached_download(self.hass, self._api, url)
+        if self._cache_url != url:
+            # Refused or failed: the link may have expired early.  Keep the last
+            # photo (``data`` is the cached one or ``None``) and ask for new links.
+            _LOGGER.debug("viewInside image download failed for %s", self.ref.device_id)
+            await self._async_request_new_links()
+        return data
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        file_id = self._get_latest_file_id()
-        cap = get_capability_status(
-            self.coordinator.data or {},
-            self.ref.device_id,
-            self.ref.component_id,
-            VIEW_INSIDE_CAP,
-        )
+        cap = self._cap()
+        item = self._latest_item() or {}
         contents_payload = cap.get("contents")
         num_images = 0
         if isinstance(contents_payload, dict):
             val = contents_payload.get("value")
             if isinstance(val, list):
                 num_images = len(val)
+        captured = cap.get("lastUpdatedTime")
+        captured = captured.get("value") if isinstance(captured, dict) else None
 
         attrs: dict[str, Any] = {
             "device_id": self.ref.device_id,
             "component": self.ref.component_id,
             "capability": VIEW_INSIDE_CAP,
-            "latest_file_id": file_id,
+            "latest_file_id": item.get("fileId") or item.get("id"),
             "total_images": num_images,
+            "captured_at": captured,
+            "link_expires_at": item.get("expiredTime"),
+            "focus_area": item.get("focusArea"),
         }
         return {k: v for k, v in attrs.items() if v is not None}
 
