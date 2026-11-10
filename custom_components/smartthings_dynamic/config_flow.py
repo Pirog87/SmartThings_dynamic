@@ -19,6 +19,7 @@ from .const import (
     CONF_INCLUDE_CONTROL_ATTRIBUTES_AS_SENSORS,
     CONF_MAX_CONCURRENT_REQUESTS,
     CONF_SCAN_INTERVAL,
+    CONF_VIEWINSIDE_CID,
     DEFAULT_AGGRESSIVE_MODE,
     DEFAULT_MAX_CONCURRENT_REQUESTS,
     DEFAULT_SCAN_INTERVAL,
@@ -226,6 +227,10 @@ class SmartThingsDynamicOptionsFlow(config_entries.OptionsFlow):
                     CONF_AGGRESSIVE_MODE,
                     default=bool(opts.get(CONF_AGGRESSIVE_MODE, DEFAULT_AGGRESSIVE_MODE)),
                 ): bool,
+                vol.Optional(
+                    CONF_VIEWINSIDE_CID,
+                    default=str(opts.get(CONF_VIEWINSIDE_CID, "")),
+                ): str,
             }
         )
 

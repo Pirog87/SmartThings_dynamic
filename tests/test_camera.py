@@ -239,3 +239,213 @@ class TestCameraConstants:
 
     def test_image_capture_cap(self):
         assert IMAGE_CAPTURE_CAP == "imageCapture"
+
+
+# ─── videoCapture: clip thumbnail camera ───────────────────────────────────
+
+from unittest.mock import AsyncMock, MagicMock  # noqa: E402
+
+from custom_components.smartthings_dynamic import camera as camera_mod  # noqa: E402
+from custom_components.smartthings_dynamic.camera import (  # noqa: E402
+    VIDEO_CAPTURE_CAP,
+    SmartThingsVideoCaptureCamera,
+    async_download_media,
+)
+
+
+def _video_camera(clip_value: Any, api: Any = None) -> SmartThingsVideoCaptureCamera:
+    from custom_components.smartthings_dynamic.entity import EntityRef
+
+    clip = {"clip": {"value": clip_value, "timestamp": "2026-11-07T12:39:11Z"}}
+    data = _make_status({"main": {VIDEO_CAPTURE_CAP: clip}})
+    coordinator = MagicMock()
+    coordinator.data = data
+    cam = object.__new__(SmartThingsVideoCaptureCamera)
+    cam.coordinator = coordinator
+    cam.ref = EntityRef(device_id="dev-1", component_id="main", capability_id=VIDEO_CAPTURE_CAP, attribute="clip")
+    cam._api = api
+    cam.hass = MagicMock()
+    return cam
+
+
+CLIP = {
+    "clipPath": "https://mediaserv.example.st-av.net/clip?id=1",
+    "thumbnailPath": "https://mediaserv.example.st-av.net/image?id=1",
+    "status": "COMPLETE",
+    "correlationId": "abc",
+}
+
+
+class TestVideoCaptureCamera:
+    def test_urls_from_clip(self):
+        cam = _video_camera(CLIP)
+        assert cam.thumbnail_url() == CLIP["thumbnailPath"]
+        assert cam.clip_url() == CLIP["clipPath"]
+
+    def test_attributes(self):
+        attrs = _video_camera(CLIP).extra_state_attributes
+        assert attrs["thumbnail_url"] == CLIP["thumbnailPath"]
+        assert attrs["clip_status"] == "COMPLETE"
+        assert attrs["correlation_id"] == "abc"
+        assert attrs["clip_time"] == "2026-11-07T12:39:11Z"
+        assert attrs["clip_keys"] == sorted(CLIP)
+
+    def test_no_urls(self):
+        cam = _video_camera({"status": "COMPLETE"})
+        assert cam.thumbnail_url() is None
+        assert "thumbnail_url" not in cam.extra_state_attributes
+
+    async def test_image_downloads_thumbnail_with_token(self):
+        api = MagicMock()
+        api.async_fetch_media = AsyncMock(return_value=b"jpeg")
+        cam = _video_camera(CLIP, api)
+        assert await cam.async_camera_image() == b"jpeg"
+        api.async_fetch_media.assert_awaited_once_with(CLIP["thumbnailPath"])
+        # Same URL is served from cache.
+        assert await cam.async_camera_image() == b"jpeg"
+        assert api.async_fetch_media.await_count == 1
+
+    async def test_image_none_without_thumbnail(self):
+        cam = _video_camera({"status": "COMPLETE"}, MagicMock())
+        assert await cam.async_camera_image() is None
+
+
+class TestDownloadMedia:
+    async def test_falls_back_to_plain_request(self, monkeypatch):
+        api = MagicMock()
+        api.async_fetch_media = AsyncMock(side_effect=RuntimeError("403"))
+        resp = MagicMock()
+        resp.raise_for_status = MagicMock()
+        resp.read = AsyncMock(return_value=b"plain")
+        session = MagicMock()
+        session.get = AsyncMock(return_value=resp)
+        monkeypatch.setattr(camera_mod, "async_get_clientsession", lambda hass: session)
+        assert await async_download_media(MagicMock(), api, "https://x/y") == b"plain"
+
+    async def test_returns_none_when_all_fail(self, monkeypatch):
+        from aiohttp import ClientError
+
+        api = MagicMock()
+        api.async_fetch_media = AsyncMock(side_effect=RuntimeError("403"))
+        session = MagicMock()
+        session.get = AsyncMock(side_effect=ClientError("boom"))
+        monkeypatch.setattr(camera_mod, "async_get_clientsession", lambda hass: session)
+        assert await async_download_media(MagicMock(), api, "https://x/y") is None
+
+
+class TestImageCaptureThrottle:
+    async def test_take_sent_once_per_interval(self, monkeypatch):
+        from custom_components.smartthings_dynamic.entity import EntityRef
+
+        data = _make_status({"main": {IMAGE_CAPTURE_CAP: {"image": {"value": "https://img/1"}}}})
+        coordinator = MagicMock()
+        coordinator.data = data
+        coordinator.async_request_refresh = AsyncMock()
+        api = MagicMock()
+        api.async_execute_command = AsyncMock()
+        api.async_fetch_media = AsyncMock(return_value=b"img")
+        monkeypatch.setattr(camera_mod, "_TAKE_DELAY_S", 0)
+
+        cam = object.__new__(SmartThingsImageCaptureCamera)
+        cam.coordinator = coordinator
+        cam.ref = EntityRef(device_id="dev-1", component_id="main", capability_id=IMAGE_CAPTURE_CAP, attribute="image")
+        cam._api = api
+        cam.hass = MagicMock()
+        cam._last_take = 0.0
+
+        assert await cam.async_camera_image() == b"img"
+        assert await cam.async_camera_image() == b"img"
+        assert api.async_execute_command.await_count == 1
+        api.async_fetch_media.assert_awaited_once_with("https://img/1")
+
+
+# ─── viewInside: download URL, link expiry, refresh of expired links ───────
+
+
+class TestViewInsideDownload:
+    def _make_camera(self, cap_status: dict[str, Any], cid: str | None = None):
+        from unittest.mock import AsyncMock, MagicMock
+
+        from custom_components.smartthings_dynamic.entity import EntityRef
+
+        coordinator = MagicMock()
+        coordinator.data = _make_status({"main": {VIEW_INSIDE_CAP: cap_status}})
+        coordinator.async_request_refresh = AsyncMock()
+
+        cam = object.__new__(SmartThingsViewInsideCamera)
+        cam.coordinator = coordinator
+        cam.ref = EntityRef(device_id="dev-1", component_id="main", capability_id=VIEW_INSIDE_CAP, attribute="contents")
+        cam._api = MagicMock()
+        cam._api.async_execute_command = AsyncMock()
+        cam._api.async_fetch_media = AsyncMock(return_value=b"jpeg")
+        cam.hass = MagicMock()
+        cam._cid = cid
+        cam._last_refresh = 0.0
+        cam._cache_url = None
+        cam._cache_bytes = None
+        return cam
+
+    def test_url_has_device_id_and_optional_cid(self):
+        from custom_components.smartthings_dynamic.camera import view_inside_image_url
+
+        assert view_inside_image_url("f-1", "dev-1") == "https://client.smartthings.com/udo/file_links/f-1?di=dev-1"
+        assert view_inside_image_url("f-1", "dev-1", "abc") == (
+            "https://client.smartthings.com/udo/file_links/f-1?di=dev-1&cid=abc"
+        )
+        assert view_inside_image_url("a/b", None) == "https://client.smartthings.com/udo/file_links/a%2Fb"
+
+    def test_link_expiry(self):
+        cam = self._make_camera({"contents": {"value": [{"fileId": "f", "expiredTime": "2026-11-10T11:50:16Z"}]}})
+        from custom_components.smartthings_dynamic.camera import _parse_ts
+
+        exp = _parse_ts("2026-11-10T11:50:16Z")
+        assert cam._link_expired(exp - 1) is False
+        assert cam._link_expired(exp + 1) is True
+
+    def test_no_expiry_means_not_expired(self):
+        cam = self._make_camera({"contents": {"value": [{"fileId": "f"}]}})
+        assert cam._link_expired() is False
+
+    async def test_valid_link_downloads_with_token(self):
+        cam = self._make_camera({"contents": {"value": [{"fileId": "f", "expiredTime": "2999-01-01T00:00:00Z"}]}})
+        assert await cam.async_camera_image() == b"jpeg"
+        cam._api.async_fetch_media.assert_awaited_once()
+        assert "file_links/f?di=dev-1" in cam._api.async_fetch_media.await_args.args[0]
+        cam._api.async_execute_command.assert_not_awaited()
+
+    async def test_expired_link_requests_refresh_and_keeps_last_photo(self):
+        cam = self._make_camera({"contents": {"value": [{"fileId": "f", "expiredTime": "2000-01-01T00:00:00Z"}]}})
+        cam._cache_bytes = b"old"
+        assert await cam.async_camera_image() == b"old"
+        cam._api.async_fetch_media.assert_not_awaited()
+        cam._api.async_execute_command.assert_awaited_once()
+        assert cam._api.async_execute_command.await_args.kwargs["command"] == "refreshAll"
+        cam.coordinator.async_request_refresh.assert_awaited_once()
+
+    async def test_refresh_is_rate_limited(self):
+        cam = self._make_camera({"contents": {"value": [{"fileId": "f", "expiredTime": "2000-01-01T00:00:00Z"}]}})
+        await cam.async_camera_image()
+        await cam.async_camera_image()
+        assert cam._api.async_execute_command.await_count == 1
+
+    async def test_refused_download_requests_refresh(self):
+        cam = self._make_camera({"contents": {"value": [{"fileId": "f", "expiredTime": "2999-01-01T00:00:00Z"}]}})
+        cam._api.async_fetch_media.side_effect = Exception("403")
+        from unittest.mock import patch
+
+        with patch("custom_components.smartthings_dynamic.camera.async_get_clientsession") as sess:
+            sess.return_value.get.side_effect = TimeoutError()
+            assert await cam.async_camera_image() is None
+        cam._api.async_execute_command.assert_awaited_once()
+
+    def test_attributes_include_capture_time_and_expiry(self):
+        cam = self._make_camera(
+            {
+                "contents": {"value": [{"fileId": "f", "expiredTime": "2026-11-10T11:50:16Z", "focusArea": "mainShelves"}]},
+                "lastUpdatedTime": {"value": "2026-11-10T11:29:46+00:00"},
+            }
+        )
+        attrs = cam.extra_state_attributes
+        assert attrs["captured_at"] == "2026-11-10T11:29:46+00:00"
+        assert attrs["link_expires_at"] == "2026-11-10T11:50:16Z"
+        assert attrs["focus_area"] == "mainShelves"
