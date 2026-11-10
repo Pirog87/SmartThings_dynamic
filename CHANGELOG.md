@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.1.1] - 2026-11-10
+
+### Fixed
+- Sub-value sensors of dict attributes (for example `powerConsumption` energy, deltaEnergy, power, powerEnergy, start, end) all had the same unique_id, so Home Assistant kept only the first one and logged "does not generate unique IDs" for the rest. Each sub-value now has its own unique_id; the one that was already registered keeps its old unique_id, entity_id and history.
+- Attributes whose name contains "current" (`countDownTimer.currentValue`, `musicPlaylist.currentTrack`) were classified as electrical current (A). `currentTrack` failed to load because its value is not numeric. Electrical current is now detected only for `current`/`amperage` or energy capabilities.
+- Numeric attributes reported in seconds, minutes or hours (for example cooktop burner timers) are now duration sensors with Home Assistant units (`s`, `min`, `h`).
+
+### Known limitation
+- Fridge photos (`samsungce.viewInside`): the `client.smartthings.com/udo/file_links` endpoint refuses SmartThings OAuth tokens ("No samsung id"), with or without the client id. It accepts only a Samsung Account token. The camera entity and its attributes work, but the photo cannot be downloaded yet.
+
 ## [3.1.0] - 2026-11-07
 
 ### Added

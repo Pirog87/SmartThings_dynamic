@@ -289,3 +289,68 @@ class TestPowerConsumptionSubAttributes:
             value={"energy": 1234.5, "power": 150, "deltaEnergy": 0.5},
         )
         assert s.native_value == 1234.5
+
+
+# ─── Regressions found on a live install (3.1.0) ───────────────────────────
+
+
+class TestNotElectricalCurrent:
+    def test_countdown_current_value_is_duration(self):
+        s = _make_sensor(
+            capability_id="samsungce.countDownTimer",
+            attribute="currentValue",
+            value=90,
+            unit="sec",
+        )
+        assert s.device_class == SensorDeviceClass.DURATION
+        assert s.native_unit_of_measurement == "s"
+
+    def test_current_track_is_not_current(self):
+        s = _make_sensor(
+            capability_id="musicPlaylist",
+            attribute="currentTrack",
+            value="{}",
+        )
+        assert s.device_class is None
+        assert s.native_unit_of_measurement is None
+
+    def test_minutes_unit_is_duration(self):
+        s = _make_sensor(
+            capability_id="samsungce.countDownTimer",
+            attribute="startValue",
+            value=5,
+            unit="min",
+        )
+        assert s.device_class == SensorDeviceClass.DURATION
+        assert s.native_unit_of_measurement == "min"
+
+    def test_energy_meter_current_still_current(self):
+        s = _make_sensor(capability_id="energyMeter", attribute="phaseCurrent", value=2.5)
+        assert s.device_class == SensorDeviceClass.CURRENT
+
+
+class TestSubAttributeUniqueId:
+    def test_sub_attributes_get_distinct_unique_ids(self):
+        value = {"energy": 100, "deltaEnergy": 1, "power": 150}
+        ids = {
+            _make_sensor(
+                capability_id="powerConsumptionReport",
+                attribute="powerConsumption",
+                sub_attribute=k,
+                value=value,
+            ).unique_id
+            for k in value
+        }
+        assert len(ids) == 3
+
+    def test_legacy_sub_attribute_keeps_bare_unique_id(self):
+        s = _make_sensor(
+            capability_id="powerConsumptionReport",
+            attribute="powerConsumption",
+            sub_attribute="energy",
+            value={"energy": 100},
+        )
+        s._legacy_unique_id = True
+        assert s.unique_id == "test-entry_dev-1_main_powerConsumptionReport_powerConsumption"
+        s._legacy_unique_id = False
+        assert s.unique_id.endswith("_powerConsumption_energy")
