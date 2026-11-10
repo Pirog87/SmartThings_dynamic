@@ -22,6 +22,17 @@ from .helpers import attribute_suffix, bool_like, is_supported_meta_attribute, s
 
 _LOGGER = logging.getLogger(__name__)
 
+# SmartThings duration units -> Home Assistant duration units.
+DURATION_UNIT_MAP: dict[str, str] = {
+    "sec": "s",
+    "s": "s",
+    "seconds": "s",
+    "min": "min",
+    "minutes": "min",
+    "hour": "h",
+    "hours": "h",
+}
+
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities) -> None:
     runtime = hass.data[DOMAIN][entry.entry_id]
@@ -30,6 +41,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     expose_raw = bool(entry.options.get(CONF_EXPOSE_RAW_SENSORS, False))
 
     added: set[str] = set()
+    # Sub-key that keeps the bare (pre-3.2) unique_id for each dict attribute.
+    # Older versions gave every sub-key the same unique_id, so only the first
+    # one created was registered.  Keeping that one unchanged preserves its
+    # entity_id and history; the other sub-keys get a suffixed unique_id.
+    primary_sub: dict[str, str] = {}
 
     @callback
     def _async_discover() -> None:
@@ -86,6 +102,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
                                     if key in added:
                                         continue
                                     added.add(key)
+                                    attr_key = f"{device_id}|{component_id}|{capability_id}|{attr_name}"
+                                    primary_sub.setdefault(attr_key, sub_key)
 
                                     new_entities.append(
                                         SmartThingsDynamicSensor(
@@ -99,6 +117,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
                                                 attribute=attr_name,
                                             ),
                                             sub_attribute=sub_key,
+                                            legacy_unique_id=primary_sub[attr_key] == sub_key,
                                             name_suffix=attribute_suffix(capability_id, sub_key_id),
                                         )
                                     )
@@ -156,9 +175,18 @@ class SmartThingsDynamicSensor(SmartThingsDynamicBaseEntity, SensorEntity):
         ref: EntityRef,
         name_suffix: str | None = None,
         sub_attribute: str | None = None,
+        legacy_unique_id: bool = False,
     ) -> None:
         super().__init__(coordinator, entry_id=entry_id, device=device, ref=ref, name_suffix=name_suffix)
         self._sub_attribute = sub_attribute
+        self._legacy_unique_id = legacy_unique_id
+
+    @property
+    def unique_id(self) -> str:
+        base = super().unique_id
+        if self._sub_attribute and not self._legacy_unique_id:
+            return f"{base}_{self._sub_attribute}"
+        return base
 
     @property
     def native_value(self):
@@ -218,6 +246,9 @@ class SmartThingsDynamicSensor(SmartThingsDynamicBaseEntity, SensorEntity):
                 return "°F"
             if unit == "K":
                 return "K"
+            duration_unit = DURATION_UNIT_MAP.get(unit.lower())
+            if duration_unit:
+                return duration_unit
             # Normalise energy-related units
             normalised = ENERGY_UNIT_MAP.get(unit)
             if normalised:
@@ -257,6 +288,11 @@ class SmartThingsDynamicSensor(SmartThingsDynamicBaseEntity, SensorEntity):
         if "time" in attr and ("completion" in attr or "end" in attr):
             return SensorDeviceClass.TIMESTAMP
 
+        # Durations (e.g. countDownTimer.currentValue in "sec")
+        unit = (self._attr_unit() or "").lower()
+        if unit in DURATION_UNIT_MAP and isinstance(self.native_value, (int, float)):
+            return SensorDeviceClass.DURATION
+
         # Battery
         if attr == "battery":
             return SensorDeviceClass.BATTERY
@@ -279,7 +315,11 @@ class SmartThingsDynamicSensor(SmartThingsDynamicBaseEntity, SensorEntity):
             return SensorDeviceClass.ENERGY
         if "voltage" in attr:
             return SensorDeviceClass.VOLTAGE
-        if attr in {"current", "amperage"} or "current" in attr and "state" not in attr:
+        # Only real electrical current: "currentValue", "currentTrack",
+        # "currentStatus" etc. are not amperes.
+        if attr in {"current", "amperage"} or (
+            attr.endswith("current") and self._is_energy_capability()
+        ):
             return SensorDeviceClass.CURRENT
         if "powerfactor" in attr or "power_factor" in attr:
             return SensorDeviceClass.POWER_FACTOR
